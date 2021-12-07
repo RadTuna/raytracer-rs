@@ -45,8 +45,10 @@ use ray::Ray;
 use crate::math::vec3::Point3;
 
 fn ray_color(ray: &Ray) -> Color {
-    if hit_sphere(&Point3::new(0.0, 0.0, -1.0), 0.5, ray) {
-        return Color::new(1.0, 0.0, 0.0)
+    let weight = hit_sphere(&Point3::new(0.0, 0.0, -1.0), 0.5, ray);
+    if weight > 0.0 {
+        let normal = (ray.get_point(weight) - Vec3::new(0.0, 0.0, -1.0)).get_normal();
+        return Color::new(normal.x + 1.0, normal.y + 1.0, normal.z + 1.0) * 0.5;
     }
 
     let unit_direction = ray.get_direction().get_normal();
@@ -58,11 +60,16 @@ fn ray_color(ray: &Ray) -> Color {
     result
 }
 
-fn hit_sphere(center: &Point3, radius: f64, ray: &Ray) -> bool {
-    let ray_center = *ray.get_origin() - *center;
+fn hit_sphere(center: &Point3, radius: f64, ray: &Ray) -> f64 {
+    let to_ray_origin = *ray.get_origin() - *center;
     let value_a = Vec3::dot(ray.get_direction(), ray.get_direction());
-    let value_b = 2.0 * Vec3::dot(&ray_center, ray.get_direction());
-    let value_c = Vec3::dot(&ray_center, &ray_center) - radius * radius;
+    let value_b = 2.0 * Vec3::dot(&to_ray_origin, ray.get_direction());
+    let value_c = Vec3::dot(&to_ray_origin, &to_ray_origin) - radius * radius;
     let discriminant = value_b * value_b - 4.0 * value_a * value_c;
-    discriminant > 0.0
+    if discriminant < 0.0 {
+        -1.0
+    } else {
+        // quadratic formula
+        (-value_b - discriminant.sqrt()) / (2.0 * value_a)
+    }
 }
