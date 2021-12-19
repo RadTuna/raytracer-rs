@@ -58,14 +58,6 @@ impl Vec3 {
     pub fn get_normal(&self) -> Vec3 {
         (*self) / self.length()
     }
-
-    // color functions
-    pub fn write_color(&self) {
-        let r = (255.999 * self.x) as i32;
-        let g = (255.999 * self.y) as i32;
-        let b = (255.999 * self.z) as i32;
-        println!("{} {} {}", r, g, b);
-    }
 }
 
 impl Index<usize> for Vec3 {

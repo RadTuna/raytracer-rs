@@ -1,75 +1,73 @@
 
 pub mod math;
+mod raytracer;
 mod ray;
 
-use math::vec3::Vec3;
-use math::vec3::Color;
+/*
+fn main() {
+    raytracer::raytracer_run();
+}
+*/
+
+use speedy2d::dimen::Vector2;
+use speedy2d::image::{ImageSmoothingMode, ImageDataType};
+use speedy2d::{Graphics2D, Window};
+use speedy2d::window::{WindowHandler, WindowHelper};
+use speedy2d::window::VirtualKeyCode;
+
+use raytracer::RayTracer;
 
 fn main() {
-    // image
-    let aspect_ratio = 16.0 / 9.0;
-    let image_width = 400;
-    let image_height = (image_width as f64 / aspect_ratio) as i32;
+    let width: usize = 800;
+    let height: usize = 600;
 
-    // Camera
-    let viewport_height = 2.0;
-    let viewport_width = aspect_ratio * viewport_height;
-    let focal_length = 1.0;
+    let window = Window::new_centered("raytracer-rs", (width as u32, height as u32)).unwrap();
+    let raytracer = RayTracer::new((width, height));
+    window.run_loop(RTWindowHandler{ raytracer });
+}
 
-    let origin = Point3::new(0.0, 0.0, 0.0);
-    let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-    let vertical = Vec3::new(0.0, viewport_height, 0.0);
-    let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+struct RTWindowHandler {
+    raytracer: RayTracer
+}
 
-    // Render
-    println!("P3\n{} {}\n255", image_width, image_height);
+impl WindowHandler for RTWindowHandler
+{
+    fn on_start(&mut self, helper: &mut WindowHelper<()>, info: speedy2d::window::WindowStartupInfo) {
+        self.raytracer.run();
+    }
 
-    for j in (0 .. image_height).rev() {
-        eprintln!("Scanline remaining: {}", j);
+    fn on_resize(&mut self, helper: &mut WindowHelper<()>, size_pixels: speedy2d::dimen::Vector2<u32>) {
 
-        for i in 0 .. image_width {
-            let u = i as f64 / (image_width - 1) as f64;
-            let v = j as f64 / (image_height - 1) as f64;
+    }
 
-            let ray = Ray::new(origin, lower_left_corner + horizontal * u + vertical * v - origin);
-            let pixel_color = ray_color(&ray);
+    fn on_draw(&mut self, helper: &mut WindowHelper, graphics: &mut Graphics2D)
+    {
+        let image_result = graphics.create_image_from_raw_pixels(
+            ImageDataType::RGB, 
+            ImageSmoothingMode::Linear,
+            Vector2::new(self.raytracer.get_size().0 as u32, self.raytracer.get_size().1 as u32),
+            self.raytracer.get_buffer());
 
-            Color::write_color(&pixel_color);
+        match image_result {
+            Ok(image) => {
+                graphics.draw_image(Vector2::new(0.0, 0.0), &image);
+            }
+            Err(error) => {
+                print!("{}", error.error().to_string());
+            }
         }
-    }
-}
 
-
-use ray::Ray;
-
-use crate::math::vec3::Point3;
-
-fn ray_color(ray: &Ray) -> Color {
-    let weight = hit_sphere(&Point3::new(0.0, 0.0, -1.0), 0.5, ray);
-    if weight > 0.0 {
-        let normal = (ray.get_point(weight) - Vec3::new(0.0, 0.0, -1.0)).get_normal();
-        return Color::new(normal.x + 1.0, normal.y + 1.0, normal.z + 1.0) * 0.5;
+        helper.request_redraw();
     }
 
-    let unit_direction = ray.get_direction().get_normal();
-    let weight = 0.5 * (unit_direction.y + 1.0);
-    let result = 
-        Color::new(1.0, 1.0, 1.0) * (1.0 - weight) 
-        + Color::new(0.5, 0.7, 1.0) * weight;
-
-    result
-}
-
-fn hit_sphere(center: &Point3, radius: f64, ray: &Ray) -> f64 {
-    let to_ray_origin = *ray.get_origin() - *center;
-    let value_a = Vec3::dot(ray.get_direction(), ray.get_direction());
-    let value_b = 2.0 * Vec3::dot(&to_ray_origin, ray.get_direction());
-    let value_c = Vec3::dot(&to_ray_origin, &to_ray_origin) - radius * radius;
-    let discriminant = value_b * value_b - 4.0 * value_a * value_c;
-    if discriminant < 0.0 {
-        -1.0
-    } else {
-        // quadratic formula
-        (-value_b - discriminant.sqrt()) / (2.0 * value_a)
+    fn on_key_down(&mut self, helper: &mut WindowHelper<()>, virtual_key_code: Option<speedy2d::window::VirtualKeyCode>, scancode: speedy2d::window::KeyScancode) {
+        if let Some(virtual_code) = virtual_key_code {
+            match virtual_code {
+                VirtualKeyCode::R => {
+                    helper.request_redraw();
+                }
+                _ => {}
+            }
+        }
     }
 }
