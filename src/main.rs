@@ -1,19 +1,14 @@
 
-pub mod math;
+mod math;
 mod raytracer;
 mod ray;
-
-/*
-fn main() {
-    raytracer::raytracer_run();
-}
-*/
+mod object;
+mod world;
 
 use speedy2d::dimen::Vector2;
 use speedy2d::image::{ImageSmoothingMode, ImageDataType};
 use speedy2d::{Graphics2D, Window};
-use speedy2d::window::{WindowHandler, WindowHelper};
-use speedy2d::window::VirtualKeyCode;
+use speedy2d::window::{WindowHandler, WindowHelper, VirtualKeyCode};
 
 use raytracer::RayTracer;
 
@@ -21,27 +16,48 @@ fn main() {
     let width: usize = 800;
     let height: usize = 600;
 
-    let window = Window::new_centered("raytracer-rs", (width as u32, height as u32)).unwrap();
     let raytracer = RayTracer::new((width, height));
-    window.run_loop(RTWindowHandler{ raytracer });
+    let window = Window::new_centered("raytracer-rs", (width as u32, height as u32)).unwrap();
+    window.run_loop(RTWindowHandler::new(raytracer));
 }
 
 struct RTWindowHandler {
-    raytracer: RayTracer
+    raytracer: RayTracer,
+    need_raytrace: bool
+}
+
+impl RTWindowHandler {
+    fn new(raytracer: RayTracer) -> RTWindowHandler {
+        RTWindowHandler { 
+            raytracer: raytracer,
+            need_raytrace: false
+         }
+    }
+
+    fn redraw_for_rt(&mut self, helper: &mut WindowHelper<()>) {
+        self.need_raytrace = true;
+        helper.request_redraw();
+    }
 }
 
 impl WindowHandler for RTWindowHandler
 {
     fn on_start(&mut self, helper: &mut WindowHelper<()>, info: speedy2d::window::WindowStartupInfo) {
-        self.raytracer.run();
+        self.redraw_for_rt(helper);
     }
 
     fn on_resize(&mut self, helper: &mut WindowHelper<()>, size_pixels: speedy2d::dimen::Vector2<u32>) {
-
+        self.raytracer.resize((size_pixels.x as usize, size_pixels.y as usize));
+        self.redraw_for_rt(helper);
     }
 
     fn on_draw(&mut self, helper: &mut WindowHelper, graphics: &mut Graphics2D)
     {
+        if self.need_raytrace == true {
+            self.raytracer.run();
+            self.need_raytrace = false;
+        }
+
         let image_result = graphics.create_image_from_raw_pixels(
             ImageDataType::RGB, 
             ImageSmoothingMode::Linear,

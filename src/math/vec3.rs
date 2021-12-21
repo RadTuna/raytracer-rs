@@ -1,14 +1,11 @@
 
-use std::ops::Index;
-use std::ops::Neg;
-use std::ops::Add;
-use std::ops::AddAssign;
-use std::ops::Sub;
-use std::ops::SubAssign;
-use std::ops::Mul;
-use std::ops::MulAssign;
-use std::ops::Div;
-use std::ops::DivAssign;
+use std::ops::{
+    Index, Neg,
+    Add, AddAssign,
+    Sub, SubAssign,
+    Mul, MulAssign, 
+    Div, DivAssign
+};
 use std::clone::Clone;
 
 pub type Color = Vec3;
@@ -23,8 +20,8 @@ pub struct Vec3 {
 
 impl Vec3 {
     // constructor
-    pub fn default() -> Vec3 {
-        Vec3 { x: 0.0, y: 0.0, z: 0.0 } 
+    pub fn new_default() -> Vec3 {
+        Vec3::new(0.0, 0.0, 0.0)
     }
 
     pub fn new(x: f64, y: f64, z: f64) -> Vec3 {

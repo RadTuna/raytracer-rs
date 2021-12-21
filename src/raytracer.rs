@@ -1,45 +1,14 @@
 
-use std::io::Cursor;
-
-use super::math::vec3::Vec3;
-use super::math::vec3::Color;
-use super::math::vec3::Point3;
-use super::ray::Ray;
-
-fn ray_color(ray: &Ray) -> Color {
-    let weight = hit_sphere(&Point3::new(0.0, 0.0, -1.0), 0.5, ray);
-    if weight > 0.0 {
-        let normal = (ray.get_point(weight) - Vec3::new(0.0, 0.0, -1.0)).get_normal();
-        return Color::new(normal.x + 1.0, normal.y + 1.0, normal.z + 1.0) * 0.5;
-    }
-
-    let unit_direction = ray.get_direction().get_normal();
-    let weight = 0.5 * (unit_direction.y + 1.0);
-    let result = 
-        Color::new(1.0, 1.0, 1.0) * (1.0 - weight) 
-        + Color::new(0.5, 0.7, 1.0) * weight;
-
-    result
-}
-
-fn hit_sphere(center: &Point3, radius: f64, ray: &Ray) -> f64 {
-    let to_ray_origin = *ray.get_origin() - *center;
-    let value_a = Vec3::dot(ray.get_direction(), ray.get_direction());
-    let value_b = 2.0 * Vec3::dot(&to_ray_origin, ray.get_direction());
-    let value_c = Vec3::dot(&to_ray_origin, &to_ray_origin) - radius * radius;
-    let discriminant = value_b * value_b - 4.0 * value_a * value_c;
-    if discriminant < 0.0 {
-        -1.0
-    } else {
-        // quadratic formula
-        (-value_b - discriminant.sqrt()) / (2.0 * value_a)
-    }
-}
+use crate::math::vec3::{Vec3, Color, Point3};
+use crate::ray::Ray;
+use crate::world::World;
+use crate::object::sphere::Sphere;
 
 pub struct RayTracer {
     buffer: Vec<u8>,
     size: (usize, usize),
-    byte_size: usize
+    byte_size: usize,
+    world: World
 }
 
 impl RayTracer {
@@ -51,11 +20,37 @@ impl RayTracer {
         RayTracer {
             buffer: new_buffer,
             size: (init_size.0, init_size.1),
-            byte_size: new_byte_size
+            byte_size: new_byte_size,
+            world: World::new_default()
         }
     }
 
+    pub fn resize(&mut self, new_size: (usize, usize)) {
+        let new_byte_size = new_size.0 * new_size.1 * 3;
+        self.buffer.resize(new_byte_size, 0);
+        for i in 0 .. self.buffer.len() {
+            self.buffer[i] = 0;
+        }
+
+        self.byte_size = new_byte_size;
+        self.size = new_size;
+    } 
+
     pub fn run(&mut self) {
+        // World
+        let main_sphere = Box::new(
+            Sphere::new(
+                Point3::new(0.0, 0.0, -1.0), 
+                0.5)
+            );
+        let floor_sphere = Box::new(
+            Sphere::new(
+                Point3::new(0.0, -100.5, -1.0), 
+                100.0)
+            );
+        self.world.add_object(main_sphere);
+        self.world.add_object(floor_sphere);
+
         // Camera
         let aspect_ratio = self.size.0 as f64 / self.size.1 as f64;
         let viewport_height = 2.0;
@@ -73,7 +68,7 @@ impl RayTracer {
                 let v = y as f64 / (self.size.1 - 1) as f64;
     
                 let ray = Ray::new(origin, lower_left_corner + horizontal * u + vertical * v - origin);
-                let pixel_color = ray_color(&ray);
+                let pixel_color = self.ray_color(&ray);
 
                 self.set_buffer((x, y), &pixel_color);
             }
@@ -95,6 +90,23 @@ impl RayTracer {
 
     pub fn get_size(&self) -> &(usize, usize) {
         &self.size
+    }
+
+    fn ray_color(&self, ray: &Ray) -> Color {
+        let hit_record = self.world.world_hit(ray, 0.0, f64::MAX);
+        match hit_record {
+            Ok(record) => {
+                (record.normal + Color::new(1.0, 1.0, 1.0)) * 0.5
+            }
+            Err(()) => {
+                let unit_direction = ray.get_direction().get_normal();
+                let weight = 0.5 * (unit_direction.y + 1.0);
+                let result = 
+                    Color::new(1.0, 1.0, 1.0) * (1.0 - weight) 
+                    + Color::new(0.5, 0.7, 1.0) * weight;
+                result
+            }
+        }
     }
 }
 

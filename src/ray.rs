@@ -1,6 +1,5 @@
 
-use super::math::vec3::Point3;
-use super::math::vec3::Vec3;
+use crate::math::vec3::{Point3, Vec3};
 
 pub struct Ray {
     origin: Point3,
@@ -8,10 +7,8 @@ pub struct Ray {
 }
 
 impl Ray {
-    pub fn default() -> Ray {
-        let origin = Point3::default();
-        let direction = Vec3::default();
-        Ray { origin, direction }
+    pub fn new_default() -> Ray {
+        Ray::new(Point3::new_default(), Vec3::new_default())
     }
 
     pub fn new(origin: Point3, direction: Vec3) -> Ray {
