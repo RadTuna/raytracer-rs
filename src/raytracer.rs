@@ -70,15 +70,20 @@ impl RayTracer {
                 let ray = Ray::new(origin, lower_left_corner + horizontal * u + vertical * v - origin);
                 let pixel_color = self.ray_color(&ray);
 
-                self.set_buffer((x, y), &pixel_color);
+                self.set_buffer((x, y), &pixel_color, true);
             }
         }
 
         print!("End raytrace!");
     }
 
-    pub fn set_buffer(&mut self, pos: (usize, usize), color: &Color) {
-        let index: usize = (self.size.0 * pos.1 * 3 + pos.0 * 3) as usize;
+    pub fn set_buffer(&mut self, pos: (usize, usize), color: &Color, flip_y: bool) {
+        let cur_y = match flip_y {
+            true => { self.size.1 - pos.1 - 1 }
+            false => { pos.1 }
+        };
+
+        let index: usize = (self.size.0 * cur_y * 3 + pos.0 * 3) as usize;
         self.buffer[index + 0] = (color[0] * 255.0) as u8;
         self.buffer[index + 1] = (color[1] * 255.0) as u8;
         self.buffer[index + 2] = (color[2] * 255.0) as u8;
