@@ -4,6 +4,7 @@ mod raytracer;
 mod ray;
 mod object;
 mod world;
+mod camera;
 
 use speedy2d::dimen::Vector2;
 use speedy2d::image::{ImageSmoothingMode, ImageDataType};

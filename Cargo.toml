@@ -5,3 +5,4 @@ edition = "2018"
 
 [dependencies]
 speedy2d = "1.2.0"
+rand = "0.8.4"

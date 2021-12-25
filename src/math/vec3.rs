@@ -55,6 +55,15 @@ impl Vec3 {
     pub fn get_normal(&self) -> Vec3 {
         (*self) / self.length()
     }
+
+    pub fn set_from_index(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.x = value,
+            1 => self.y = value,
+            2 => self.z = value,
+            _ => panic!("out range vec3!")
+        }
+    }
 }
 
 impl Index<usize> for Vec3 {
