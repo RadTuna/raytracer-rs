@@ -2,6 +2,7 @@
 use crate::UserEvent;
 use crate::math::vec3::{Vec3, Color, Point3};
 use crate::ray::Ray;
+use crate::thread::worker::WorkerManager;
 use crate::world::World;
 use crate::object::sphere::Sphere;
 use crate::camera::Camera;
@@ -10,6 +11,7 @@ use speedy2d::window::UserEventSender;
 
 pub struct RayTracer {
     event_sender: UserEventSender<UserEvent>,
+    worker_manager: WorkerManager,
     buffer: Vec<u8>,
     buffer_size: (usize, usize),
     buffer_byte_size: usize,
@@ -27,6 +29,7 @@ impl RayTracer {
 
         RayTracer {
             event_sender,
+            worker_manager: WorkerManager::new(),
             buffer: new_buffer,
             buffer_size: (init_size.0, init_size.1),
             buffer_byte_size: new_byte_size,
@@ -159,6 +162,22 @@ impl RayTracer {
         }
 
         accmulated_color
+    }
+}
+
+use crate::thread::task::Task;
+
+struct RaytraceTask {
+
+}
+
+impl Task for RaytraceTask {
+    fn do_work(&mut self) {
+        
+    }
+
+    fn finish_work(&mut self) {
+        
     }
 }
 

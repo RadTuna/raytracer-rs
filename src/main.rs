@@ -5,6 +5,7 @@ mod ray;
 mod object;
 mod world;
 mod camera;
+mod thread;
 
 use speedy2d::dimen::Vector2;
 use speedy2d::image::{ImageSmoothingMode, ImageDataType};
