@@ -1,4 +1,5 @@
 
+use std::f64::consts::PI;
 use std::ops::{
     Index, Neg,
     Add, AddAssign,
@@ -7,6 +8,7 @@ use std::ops::{
     Div, DivAssign
 };
 use std::clone::Clone;
+use rand::{Rng, random};
 
 pub type Color = Vec3;
 pub type Point3 = Vec3;
@@ -38,6 +40,36 @@ impl Vec3 {
             x: lhs.y * rhs.z - lhs.z * rhs.y, 
             y: lhs.z * rhs.x - lhs.x * rhs.z, 
             z: lhs.x * rhs.y - lhs.y * rhs.x }
+    }
+
+    pub fn rand() -> Vec3 {
+        Vec3::rand_range((0.0, 1.0))
+    }
+
+    pub fn rand_range(range: (f64, f64)) -> Vec3 {
+        Vec3 { 
+            x: rand::thread_rng().gen_range(range.0 .. range.1), 
+            y: rand::thread_rng().gen_range(range.0 .. range.1), 
+            z: rand::thread_rng().gen_range(range.0 .. range.1) 
+        }
+    }
+
+    pub fn rand_in_unit_sphere() -> Vec3 {
+        loop {
+            let result = Vec3::rand_range((-1.0, 1.0));
+            if result.sqaure_length() <= 1.0 {
+                return result;
+            }
+        }
+    }
+
+    pub fn rand_in_hemisphere(normal: &Vec3) -> Vec3 {
+        let in_unit_sphere = Vec3::rand_in_unit_sphere();
+        if Vec3::dot(&in_unit_sphere, normal) > 0.0 {
+            return in_unit_sphere;
+        } else {
+            return in_unit_sphere;
+        }
     }
 
     pub fn length(&self) -> f64 {

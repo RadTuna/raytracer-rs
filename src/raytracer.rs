@@ -1,31 +1,37 @@
 
+use crate::UserEvent;
 use crate::math::vec3::{Vec3, Color, Point3};
 use crate::ray::Ray;
 use crate::world::World;
 use crate::object::sphere::Sphere;
 use crate::camera::Camera;
 use rand::Rng;
+use speedy2d::window::UserEventSender;
 
 pub struct RayTracer {
+    event_sender: UserEventSender<UserEvent>,
     buffer: Vec<u8>,
     buffer_size: (usize, usize),
     buffer_byte_size: usize,
     sample_count: u32,
+    bound_limit: u32,
     world: World,
     camera: Camera
 }
 
 impl RayTracer {
-    pub fn new(init_size: (usize, usize)) -> RayTracer {
+    pub fn new(init_size: (usize, usize), event_sender: UserEventSender<UserEvent>) -> RayTracer {
         let mut new_buffer: Vec<u8> = Vec::new();
         let new_byte_size = init_size.0 * init_size.1 * 3;
         new_buffer.resize(new_byte_size, 0);
 
         RayTracer {
+            event_sender,
             buffer: new_buffer,
             buffer_size: (init_size.0, init_size.1),
             buffer_byte_size: new_byte_size,
-            sample_count: 100,
+            sample_count: 10,
+            bound_limit: 10,
             world: World::new_default(),
             camera: Camera::new_default()
         }
@@ -61,14 +67,18 @@ impl RayTracer {
         let aspect_ratio = self.buffer_size.0 as f64 / self.buffer_size.1 as f64;
         self.camera.update(aspect_ratio);
     
+        let total_count = self.buffer_size.0 * self.buffer_size.1;
         for y in (0 .. self.buffer_size.1).rev() {
             for x in 0 .. self.buffer_size.0 {
                 let final_color = self.multisample_ray((x, y), self.sample_count);
                 self.set_buffer((x, y), &final_color, true);
+
+                let percentage = (total_count * 100) / ((x + 1) * (y + 1));
+                self.print_message(&format!("Progress... {}%", percentage));
             }
         }
 
-        print!("End raytrace!");
+        self.print_message("Finish Raytrace!")
     }
 
     pub fn set_buffer(&mut self, pos: (usize, usize), color: &Color, flip_y: bool) {
@@ -91,11 +101,30 @@ impl RayTracer {
         &self.buffer_size
     }
 
+    fn print_message(&self, message: &str) {
+        let event = UserEvent::SetHeader(message.to_string());
+        let result = self.event_sender.send_event(event);
+
+        match result {
+            _ => {}
+        }
+    }
+
     fn ray_color(&self, ray: &Ray) -> Color {
-        let hit_record = self.world.world_hit(ray, 0.0, f64::MAX);
+        self.reflect_ray_recursive(ray, self.bound_limit)
+    }
+
+    fn reflect_ray_recursive(&self, ray: &Ray, bound_count: u32) -> Color {
+        if bound_count == 0 {
+            return Color::new_default();
+        }
+
+        let hit_record = self.world.world_hit(ray, f64::EPSILON, f64::MAX);
         match hit_record {
             Ok(record) => {
-                (record.normal + Color::new(1.0, 1.0, 1.0)) * 0.5
+                let target = record.point + Vec3::rand_in_hemisphere(&record.normal);
+                let next_ray = Ray::new(record.point, target - record.point);
+                self.reflect_ray_recursive(&next_ray, bound_count - 1) * 0.5
             }
             Err(()) => {
                 let unit_direction = ray.get_direction().get_normal();
@@ -124,6 +153,7 @@ impl RayTracer {
         for i in 0 .. 3 {
             let mut channel = accmulated_color[i];
             channel *= scale;
+            channel = channel.sqrt();
             channel = channel.clamp(0.0, 1.0);
             accmulated_color.set_from_index(i, channel);
         }
