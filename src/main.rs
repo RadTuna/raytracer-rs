@@ -13,6 +13,10 @@ use speedy2d::window::{WindowHandler, WindowHelper, VirtualKeyCode, WindowCreati
 
 use raytracer::RayTracer;
 
+use std::thread;
+use std::sync::mpsc;
+
+
 fn main() {
     let title = "raytracer-rs";
     let width: usize = 800;
@@ -35,24 +39,55 @@ pub enum UserEvent {
     SetHeader(String)
 }
 
-struct RTWindowHandler {
+struct RTReturn {
     raytracer: RayTracer,
+    buffer: Vec<u8>,
+    size: (usize, usize)
+}
+
+struct RTWindowHandler {
+    raytracer: Option<RayTracer>,
     title: String,
-    need_raytrace: bool
+    need_raytrace: bool,
+    receiver: Option<mpsc::Receiver<RTReturn>>
 }
 
 impl RTWindowHandler {
     fn new(raytracer: RayTracer, title: &str) -> RTWindowHandler {
         RTWindowHandler { 
-            raytracer: raytracer,
+            raytracer: Option::Some(raytracer),
             title: title.to_string(),
-            need_raytrace: false
+            need_raytrace: false,
+            receiver: Option::None
          }
     }
 
     fn redraw_for_rt(&mut self, helper: &mut WindowHelper<UserEvent>) {
         self.need_raytrace = true;
         helper.request_redraw();
+    }
+
+    fn run_async_raytrace(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.receiver = Option::Some(rx);
+
+        let local_raytracer = self.raytracer.take();
+        thread::spawn(move || {
+            if let Some(mut real_raytracer) = local_raytracer
+            {
+                real_raytracer.run();
+                let buffer = real_raytracer.get_buffer().clone();
+                let size = real_raytracer.get_size().clone();
+                let result = RTReturn { 
+                    raytracer: real_raytracer, 
+                    buffer, 
+                    size 
+                };
+
+                tx.send(result).unwrap();
+            }
+        });
+        self.need_raytrace = false;
     }
 }
 
@@ -62,29 +97,45 @@ impl WindowHandler<UserEvent> for RTWindowHandler {
     }
 
     fn on_resize(&mut self, helper: &mut WindowHelper<UserEvent>, size_pixels: speedy2d::dimen::Vector2<u32>) {
-        self.raytracer.resize((size_pixels.x as usize, size_pixels.y as usize));
+        match &mut self.raytracer {
+            Some(local_raytracer) => {
+                local_raytracer.resize((size_pixels.x as usize, size_pixels.y as usize));
+            }
+            _ => { }
+        }
         self.redraw_for_rt(helper);
     }
 
     fn on_draw(&mut self, helper: &mut WindowHelper<UserEvent>, graphics: &mut Graphics2D)
     {
         if self.need_raytrace == true {
-            self.raytracer.run();
-            self.need_raytrace = false;
+            self.run_async_raytrace();
         }
 
-        let image_result = graphics.create_image_from_raw_pixels(
-            ImageDataType::RGB, 
-            ImageSmoothingMode::Linear,
-            Vector2::new(self.raytracer.get_size().0 as u32, self.raytracer.get_size().1 as u32),
-            self.raytracer.get_buffer());
+        if let Some(local_receiver) = &self.receiver
+        {
+            let result = local_receiver.try_recv();
+            match result
+            {
+                Ok(real_result) => {
+                    let image_result = graphics.create_image_from_raw_pixels(
+                        ImageDataType::RGB, 
+                        ImageSmoothingMode::Linear,
+                        Vector2::new(real_result.size.0 as u32, real_result.size.1 as u32),
+                        &real_result.buffer);
+            
+                    match image_result {
+                        Ok(image) => {
+                            graphics.draw_image(Vector2::new(0.0, 0.0), &image);
+                        }
+                        Err(error) => {
+                            print!("{}", error.error().to_string());
+                        }
+                    }
 
-        match image_result {
-            Ok(image) => {
-                graphics.draw_image(Vector2::new(0.0, 0.0), &image);
-            }
-            Err(error) => {
-                print!("{}", error.error().to_string());
+                    self.raytracer = Some(real_result.raytracer);
+                }
+                Err(_) => { }
             }
         }
 

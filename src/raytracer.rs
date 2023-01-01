@@ -8,6 +8,8 @@ use crate::camera::Camera;
 use rand::Rng;
 use speedy2d::window::UserEventSender;
 
+
+
 pub struct RayTracer {
     event_sender: UserEventSender<UserEvent>,
     buffer: Vec<u8>,
@@ -31,7 +33,7 @@ impl RayTracer {
             buffer_size: (init_size.0, init_size.1),
             buffer_byte_size: new_byte_size,
             sample_count: 10,
-            bound_limit: 10,
+            bound_limit: 5,
             world: World::new_default(),
             camera: Camera::new_default()
         }
@@ -68,14 +70,14 @@ impl RayTracer {
         self.camera.update(aspect_ratio);
     
         let total_count = self.buffer_size.0 * self.buffer_size.1;
-        for y in (0 .. self.buffer_size.1).rev() {
+        for y in 0 .. self.buffer_size.1 {
             for x in 0 .. self.buffer_size.0 {
                 let final_color = self.multisample_ray((x, y), self.sample_count);
                 self.set_buffer((x, y), &final_color, true);
-
-                let percentage = (total_count * 100) / ((x + 1) * (y + 1));
-                self.print_message(&format!("Progress... {}%", percentage));
             }
+
+            let percentage = ((self.buffer_size.0) * (y + 1) * 100) / total_count;
+            self.print_message(&format!("Progress... {}%", percentage));
         }
 
         self.print_message("Finish Raytrace!")
@@ -139,7 +141,7 @@ impl RayTracer {
 
     fn multisample_ray(&self, screen_pos: (usize, usize), sample_count: u32) -> Color {
         let mut accmulated_color = Color::new_default();
-        for sample in 0 .. sample_count {
+        for _ in 0 .. sample_count {
             let u_rand = rand::thread_rng().gen_range(0.0 .. 1.0);
             let u = (screen_pos.0 as f64 + u_rand) / (self.buffer_size.0 - 1) as f64;
             let v_rand = rand::thread_rng().gen_range(0.0 .. 1.0);

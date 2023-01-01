@@ -1,5 +1,4 @@
 
-use std::f64::consts::PI;
 use std::ops::{
     Index, Neg,
     Add, AddAssign,
@@ -8,7 +7,7 @@ use std::ops::{
     Div, DivAssign
 };
 use std::clone::Clone;
-use rand::{Rng, random};
+use rand::Rng;
 
 pub type Color = Vec3;
 pub type Point3 = Vec3;

@@ -3,7 +3,7 @@ use crate::object::{Hittable, HitRecord};
 use crate::ray::Ray;
 
 pub struct World {
-    objects: Vec<Box<dyn Hittable>>
+    objects: Vec<Box<dyn Hittable + Send>>
 }
 
 impl World {
@@ -11,7 +11,7 @@ impl World {
         World { objects: Vec::new() }
     }
 
-    pub fn new(object: Box<dyn Hittable>) -> World {
+    pub fn new(object: Box<dyn Hittable + Send>) -> World {
         let mut objects = Vec::new();
         objects.push(object);
         World { objects } 
@@ -42,7 +42,7 @@ impl World {
         }
     }
 
-    pub fn add_object(&mut self, object: Box<dyn Hittable>) {
+    pub fn add_object(&mut self, object: Box<dyn Hittable + Send>) {
         self.objects.push(object);
     }
 
