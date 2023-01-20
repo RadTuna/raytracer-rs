@@ -1,9 +1,10 @@
 
 use crate::object::{Hittable, HitRecord};
 use crate::ray::Ray;
+use crate::math::vec3::Color;
 
 pub struct World {
-    objects: Vec<Box<dyn Hittable + Send>>
+    objects: Vec<Box<dyn Hittable>>
 }
 
 impl World {
@@ -11,7 +12,7 @@ impl World {
         World { objects: Vec::new() }
     }
 
-    pub fn new(object: Box<dyn Hittable + Send>) -> World {
+    pub fn new(object: Box<dyn Hittable>) -> World {
         let mut objects = Vec::new();
         objects.push(object);
         World { objects } 
@@ -42,12 +43,16 @@ impl World {
         }
     }
 
-    pub fn add_object(&mut self, object: Box<dyn Hittable + Send>) {
+    pub fn add_object(&mut self, object: Box<dyn Hittable>) {
         self.objects.push(object);
     }
 
     pub fn clear_all_objects(&mut self) {
         self.objects.clear();
+    }
+
+    pub fn get_sky_color(&self) -> Color {
+        Color::new(1.0, 1.0, 1.0)
     }
 }
 

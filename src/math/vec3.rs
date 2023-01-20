@@ -7,7 +7,8 @@ use std::ops::{
     Div, DivAssign
 };
 use std::clone::Clone;
-use rand::Rng;
+use rand::{thread_rng, Rng};
+use rand::distributions::Uniform;
 
 pub type Color = Vec3;
 pub type Point3 = Vec3;
@@ -46,10 +47,12 @@ impl Vec3 {
     }
 
     pub fn rand_range(range: (f64, f64)) -> Vec3 {
+        let mut rng = thread_rng();
+        let x = rng.sample(Uniform::new(10u32, 15));
         Vec3 { 
-            x: rand::thread_rng().gen_range(range.0 .. range.1), 
-            y: rand::thread_rng().gen_range(range.0 .. range.1), 
-            z: rand::thread_rng().gen_range(range.0 .. range.1) 
+            x: rng.sample(Uniform::new(range.0, range.1)), 
+            y: rng.sample(Uniform::new(range.0, range.1)), 
+            z: rng.sample(Uniform::new(range.0, range.1)) 
         }
     }
 
@@ -87,6 +90,11 @@ impl Vec3 {
         (*self) / self.length()
     }
 
+    pub fn relfect(&self, normal : &Vec3) -> Vec3 {
+        let dot = Vec3::dot(self, normal);
+        *self - (*normal * (2.0 * dot))
+    }
+
     pub fn set_from_index(&mut self, index: usize, value: f64) {
         match index {
             0 => self.x = value,
@@ -94,6 +102,16 @@ impl Vec3 {
             2 => self.z = value,
             _ => panic!("out range vec3!")
         }
+    }
+
+    pub fn is_near_zero(&self) -> bool {
+        let epslion = 1e-8;
+        let result = 
+            self.x.abs() < epslion 
+            && self.y.abs() < epslion 
+            && self.z.abs() < epslion;
+
+        result
     }
 }
 

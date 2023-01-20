@@ -1,10 +1,13 @@
 
 use crate::UserEvent;
-use crate::math::vec3::{Vec3, Color, Point3};
+use crate::material::lambertian::Lambertian;
+use crate::material::metal::Metal;
+use crate::math::vec3::{Color, Point3};
 use crate::ray::Ray;
 use crate::world::World;
 use crate::object::sphere::Sphere;
 use crate::camera::Camera;
+
 use rand::Rng;
 use speedy2d::window::UserEventSender;
 
@@ -32,8 +35,8 @@ impl RayTracer {
             buffer: new_buffer,
             buffer_size: (init_size.0, init_size.1),
             buffer_byte_size: new_byte_size,
-            sample_count: 10,
-            bound_limit: 5,
+            sample_count: 1000,
+            bound_limit: 50,
             world: World::new_default(),
             camera: Camera::new_default()
         }
@@ -51,19 +54,41 @@ impl RayTracer {
     } 
 
     pub fn run(&mut self) {
+        // Material
+        let material_ground = Lambertian::new(Color::new(0.2, 0.2, 0.2));
+        let material_center = Lambertian::new(Color::new(0.9, 0.6, 0.6));
+        let material_left = Metal::new(Color::new(0.8, 0.8, 0.8));
+        let material_right = Metal::new(Color::new(0.8, 0.6, 0.2));
+
         // World
         let main_sphere = Box::new(
             Sphere::new(
-                Point3::new(0.0, 0.0, -1.0), 
-                0.5)
+                Point3::new(0.0, 0.0, -1.5), 
+                0.5,
+                Box::new(material_center))
             );
         let floor_sphere = Box::new(
             Sphere::new(
-                Point3::new(0.0, -100.5, -1.0), 
-                100.0)
+                Point3::new(0.0, -100.5, 0.0), 
+                100.0,
+                Box::new(material_ground))
+            );
+        let left_sphere = Box::new(
+            Sphere::new(
+                Point3::new(-1.0, 0.0, -1.5), 
+                0.5,
+                Box::new(material_left))
+            );
+        let right_sphere = Box::new(
+            Sphere::new(
+                Point3::new(1.0, 0.0, -1.5), 
+                0.5,
+                Box::new(material_right))
             );
         self.world.add_object(main_sphere);
         self.world.add_object(floor_sphere);
+        self.world.add_object(left_sphere);
+        self.world.add_object(right_sphere);
 
         // Camera
         let aspect_ratio = self.buffer_size.0 as f64 / self.buffer_size.1 as f64;
@@ -118,25 +143,30 @@ impl RayTracer {
 
     fn reflect_ray_recursive(&self, ray: &Ray, bound_count: u32) -> Color {
         if bound_count == 0 {
-            return Color::new_default();
+            return self.world.get_sky_color();
         }
 
-        let hit_record = self.world.world_hit(ray, f64::EPSILON, f64::MAX);
+        let hit_record = self.world.world_hit(ray, 0.0001, f64::MAX);
+
+        let out_color: Color;
         match hit_record {
             Ok(record) => {
-                let target = record.point + Vec3::rand_in_hemisphere(&record.normal);
-                let next_ray = Ray::new(record.point, target - record.point);
-                self.reflect_ray_recursive(&next_ray, bound_count - 1) * 0.5
+                let materal_result = record.material.scatter(ray, &record);
+                match materal_result {
+                    Some(result) => {
+                        out_color = result.attenuation * self.reflect_ray_recursive(&result.scattered_ray, bound_count - 1);
+                    }
+                    _ => { 
+                        out_color = self.world.get_sky_color();
+                    }
+                }
             }
             Err(()) => {
-                let unit_direction = ray.get_direction().get_normal();
-                let weight = 0.5 * (unit_direction.y + 1.0);
-                let result = 
-                    Color::new(1.0, 1.0, 1.0) * (1.0 - weight) 
-                    + Color::new(0.5, 0.7, 1.0) * weight;
-                result
+                out_color = self.world.get_sky_color();
             }
         }
+
+        out_color
     }
 
     fn multisample_ray(&self, screen_pos: (usize, usize), sample_count: u32) -> Color {

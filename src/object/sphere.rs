@@ -1,22 +1,29 @@
 
+use crate::material::Material;
+use crate::material::errormat::ErrorMat;
 use crate::object::{Hittable, HitRecord};
 use crate::math::vec3::{Vec3, Point3};
 use crate::ray::Ray;
 
 pub struct Sphere {
     center: Point3,
-    radius: f64
+    radius: f64,
+    material: Box<dyn Material>
 }
 
 impl Sphere {
     pub fn new_default() -> Sphere {
-        Sphere::new(Point3::new_default(), 0.0)
+        Sphere::new(
+            Point3::new_default(), 
+            0.0, 
+            Box::new(ErrorMat::new_default()))
     }
 
-    pub fn new(center: Point3, radius: f64) -> Sphere {
+    pub fn new(center: Point3, radius: f64, material: Box<dyn Material>) -> Sphere {
         Sphere {
             center,
-            radius
+            radius,
+            material
         }
     }
 }
@@ -47,7 +54,8 @@ impl Hittable for Sphere {
             point: hit_point,
             normal: (hit_point - self.center) / self.radius,
             weight: root,
-            is_front_face: true
+            is_front_face: true,
+            material: &*self.material
         };
         record.set_face_from_ray(ray);
 

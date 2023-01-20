@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 mod math;
 mod raytracer;
@@ -5,6 +7,7 @@ mod ray;
 mod object;
 mod world;
 mod camera;
+mod material;
 
 use speedy2d::dimen::Vector2;
 use speedy2d::image::{ImageSmoothingMode, ImageDataType};
@@ -19,8 +22,8 @@ use std::sync::mpsc;
 
 fn main() {
     let title = "raytracer-rs";
-    let width: usize = 800;
-    let height: usize = 600;
+    let width: usize = 1280;
+    let height: usize = 720;
 
     let mut creation_options = WindowCreationOptions::new_windowed(
         WindowSize::PhysicalPixels(Vector2::new(width as u32, height as u32)),
@@ -161,7 +164,6 @@ impl WindowHandler<UserEvent> for RTWindowHandler {
                 new_header.push_str(&message);
                 helper.set_title(&new_header);
             }
-            _ => {}
         }
     }
 }
