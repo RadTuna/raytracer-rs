@@ -2,6 +2,7 @@
 pub mod errormat;
 pub mod lambertian;
 pub mod metal;
+pub mod dielectric;
 
 use dyn_clone::DynClone;
 

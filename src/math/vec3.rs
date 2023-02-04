@@ -74,6 +74,23 @@ impl Vec3 {
         }
     }
 
+    pub fn rand_in_unit_disk() -> Vec3 {
+        let mut rng = thread_rng();
+        let mut point: Vec3;
+        loop {
+            point = Vec3::new(
+                rng.sample(Uniform::new(-1.0, 1.0)),
+                rng.sample(Uniform::new(-1.0, 1.0)),
+                0.0);
+
+            if point.sqaure_length() < 1.0 {
+                break;
+            }
+        }
+
+        point
+    }
+
     pub fn length(&self) -> f64 {
         self.sqaure_length().sqrt()
     }
@@ -90,9 +107,17 @@ impl Vec3 {
         (*self) / self.length()
     }
 
-    pub fn relfect(&self, normal : &Vec3) -> Vec3 {
+    pub fn reflect(&self, normal : &Vec3) -> Vec3 {
         let dot = Vec3::dot(self, normal);
         *self - (*normal * (2.0 * dot))
+    }
+
+    pub fn refract(&self, normal: &Vec3, eta: f64) -> Vec3 {
+        let inv_self = *self * -1.0;
+        let cos = Vec3::dot(&inv_self, normal).min(1.0);
+        let refract_perp = (*self + (*normal * cos)) * eta;
+        let refract_parallel = *normal * -(1.0 - refract_perp.sqaure_length()).abs().sqrt();
+        return refract_perp + refract_parallel;
     }
 
     pub fn set_from_index(&mut self, index: usize, value: f64) {

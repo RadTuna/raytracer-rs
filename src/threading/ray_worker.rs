@@ -58,9 +58,6 @@ impl RayWorker {
     pub fn run(&mut self) {
         println!("start ray worker (id: {id})", id = self.settings.bound_y.0);
 
-        let aspect_ratio = self.settings.screen_size.0 as f64 / self.settings.screen_size.1 as f64;
-        self.camera.update(aspect_ratio);
-
         let start_y = self.settings.bound_y.0;
         let end_y = self.settings.bound_y.1;
         for sample_count in 0 .. self.settings.sample_count {

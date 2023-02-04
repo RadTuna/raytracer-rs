@@ -5,13 +5,15 @@ use std::sync::mpsc::{Sender, Receiver};
 use crate::UserEvent;
 use crate::material::lambertian::Lambertian;
 use crate::material::metal::Metal;
+use crate::material::dielectric::Dielectric;
 use crate::math::vec3::{Color, Point3};
 use crate::threading::RayWorkerManager;
 use crate::threading::ray_worker::{RayWorkerSettings, RayResult};
 use crate::world::World;
 use crate::object::sphere::Sphere;
-use crate::camera::Camera;
+use crate::camera::{Camera, CameraSettings};
 
+use rand::{thread_rng, Rng};
 use speedy2d::window::UserEventSender;
 
 
@@ -110,7 +112,7 @@ impl RayTracer {
         let ray_tracer_settings = RayTracerSettings {
             sample_count: 1000,
             bound_limit: 100,
-            receive_limit: 100
+            receive_limit: 10
         };
 
         let (sender, receiver): (Sender<RayResult>, Receiver<RayResult>) = channel();
@@ -143,6 +145,7 @@ impl RayTracer {
         self.state = RayTracerState::Working;
 
         self.build_world();
+        self.update_camera();
 
         let mut ray_worker_settings = RayWorkerSettings {
             screen_size: self.get_buffer_size(),
@@ -247,43 +250,68 @@ impl RayTracer {
     }
 
     fn build_world(&mut self) {
-        // Material
-        let material_ground = Lambertian::new(Color::new(0.2, 0.2, 0.2));
-        let material_center = Lambertian::new(Color::new(0.9, 0.6, 0.6));
-        let material_left = Metal::new(Color::new(0.8, 0.8, 0.8));
-        let material_right = Metal::new(Color::new(0.8, 0.6, 0.2));
+        // ground
+        let ground_material = Lambertian::new(Color::new(0.5, 0.5, 0.5));
+        let ground_mesh = Sphere::new(Point3::new(0.0, -1000.0, 0.0), 1000.0, Box::new(ground_material));
+        self.world.add_object(Box::new(ground_mesh));
+    
+        // random small spheres
+        for a in -15 .. 15 {
+            for b in -15 .. 15 {
+                let mut rng = thread_rng();
+                let center = Point3::new(
+                    a as f64 + 0.9 * rng.gen_range(0.0 .. 1.0), 
+                    0.2,
+                    b as f64 + 0.9 * rng.gen_range(0.0 .. 1.0));
 
-        // World
-        let main_sphere = Box::new(
-            Sphere::new(
-                Point3::new(0.0, 0.0, -1.5), 
-                0.5,
-                Box::new(material_center))
-            );
-        let floor_sphere = Box::new(
-            Sphere::new(
-                Point3::new(0.0, -100.5, 0.0), 
-                100.0,
-                Box::new(material_ground))
-            );
-        let left_sphere = Box::new(
-            Sphere::new(
-                Point3::new(-1.0, 0.0, -1.5), 
-                0.5,
-                Box::new(material_left))
-            );
-        let right_sphere = Box::new(
-            Sphere::new(
-                Point3::new(1.0, 0.0, -1.5), 
-                0.5,
-                Box::new(material_right))
-            );
+                let can_spawn = (center - Point3::new(4.0, 0.2, 0.0)).length() > 0.9;
 
-        self.world.clear_all_objects();
-        self.world.add_object(main_sphere);
-        self.world.add_object(floor_sphere);
-        self.world.add_object(left_sphere);
-        self.world.add_object(right_sphere);
+                if can_spawn {
+                    let choose_material = rng.gen_range(0.0 .. 1.0);
+                    let mesh = if choose_material < 0.5 { // diffuse
+                        let albedo = Color::rand() * Color::rand();
+                        let material = Lambertian::new(albedo);
+                        Sphere::new(center, 0.2, Box::new(material))
+                    } else if choose_material < 0.8 { // metal
+                        let albedo = Color::rand_range((0.5, 1.0));
+                        let fuzziness = rng.gen_range(0.0 .. 0.1);
+                        let material = Metal::new(albedo, fuzziness);
+                        Sphere::new(center, 0.2, Box::new(material))
+                    } else { // glass
+                        let material = Dielectric::new(1.5);
+                        Sphere::new(center, 0.2, Box::new(material))
+                    };
+
+                    self.world.add_object(Box::new(mesh));
+                };
+            }
+
+            // big sphere
+            let center_material = Dielectric::new(1.5);
+            let center_mesh = Sphere::new(Point3::new(0.0, 1.0, 0.0), 1.0, Box::new(center_material));
+            self.world.add_object(Box::new(center_mesh));
+
+            let back_material = Lambertian::new(Color::new(0.4, 0.2, 0.1));
+            let back_mesh = Sphere::new(Point3::new(-4.0, 1.0, 0.0), 1.0, Box::new(back_material));
+            self.world.add_object(Box::new(back_mesh));
+
+            let front_material = Metal::new(Color::new(0.7, 0.6, 0.5), 0.0);
+            let front_mesh = Sphere::new(Point3::new(4.0, 1.0, 0.0), 1.0, Box::new(front_material));
+            self.world.add_object(Box::new(front_mesh));
+        }
+    }
+
+    fn update_camera(&mut self) {
+        let look_from = Point3::new(13.0, 2.0, 3.0);
+        let look_to = Point3::new(0.0, 0.0, 0.0);
+        let aspect_ratio = self.get_buffer_size().0 as f64 / self.get_buffer_size().1 as f64;
+
+        let field_of_view = 20.0;
+        let aperture = 0.1;
+        let dist_to_focus = 10.0;
+        let settings = CameraSettings::new(field_of_view, aperture, dist_to_focus);
+
+        self.camera.update(look_from, look_to, aspect_ratio, settings);
     }
 
 }
