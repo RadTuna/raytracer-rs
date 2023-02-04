@@ -7,6 +7,7 @@ use crate::math::vec3::Vec3;
 
 
 
+#[derive(Clone)]
 pub struct Lambertian {
     albedo: Color
 }

@@ -5,6 +5,8 @@ use crate::object::{Hittable, HitRecord};
 use crate::math::vec3::{Vec3, Point3};
 use crate::ray::Ray;
 
+
+#[derive(Clone)]
 pub struct Sphere {
     center: Point3,
     radius: f64,

@@ -1,45 +1,51 @@
 
+use std::sync::mpsc::channel;
+use std::sync::mpsc::{Sender, Receiver};
+
 use crate::UserEvent;
 use crate::material::lambertian::Lambertian;
 use crate::material::metal::Metal;
 use crate::math::vec3::{Color, Point3};
-use crate::ray::Ray;
+use crate::threading::RayWorkerManager;
+use crate::threading::ray_worker::{RayWorkerSettings, RayResult};
 use crate::world::World;
 use crate::object::sphere::Sphere;
 use crate::camera::Camera;
 
-use rand::Rng;
 use speedy2d::window::UserEventSender;
 
 
-
-pub struct RayTracer {
-    event_sender: UserEventSender<UserEvent>,
-    buffer: Vec<u8>,
-    buffer_size: (usize, usize),
-    buffer_byte_size: usize,
-    sample_count: u32,
-    bound_limit: u32,
-    world: World,
-    camera: Camera
+#[derive(Clone, Copy)]
+pub enum RayTracerState {
+    Idle,
+    Working
 }
 
-impl RayTracer {
-    pub fn new(init_size: (usize, usize), event_sender: UserEventSender<UserEvent>) -> RayTracer {
-        let mut new_buffer: Vec<u8> = Vec::new();
-        let new_byte_size = init_size.0 * init_size.1 * 3;
-        new_buffer.resize(new_byte_size, 0);
+#[derive(Clone, Copy)]
+pub struct RayTracerSettings {
+    sample_count: u32,
+    bound_limit: u32,
+    receive_limit: u32
+}
 
-        RayTracer {
-            event_sender,
-            buffer: new_buffer,
-            buffer_size: (init_size.0, init_size.1),
-            buffer_byte_size: new_byte_size,
-            sample_count: 1000,
-            bound_limit: 50,
-            world: World::new_default(),
-            camera: Camera::new_default()
-        }
+#[derive(Clone)]
+pub struct RayTracerBuffer {
+    buffer: Vec<u8>,
+    buffer_size: (usize, usize),
+    buffer_byte_size: usize
+}
+
+impl RayTracerBuffer {
+    pub fn set_buffer(&mut self, pos: (usize, usize), color: &Color, flip_y: bool) {
+        let cur_y = match flip_y {
+            true => { self.buffer_size.1 - pos.1 - 1 }
+            false => { pos.1 }
+        };
+
+        let index: usize = (self.buffer_size.0 * cur_y * 3 + pos.0 * 3) as usize;
+        self.buffer[index + 0] = (color[0] * 256.0) as u8;
+        self.buffer[index + 1] = (color[1] * 256.0) as u8;
+        self.buffer[index + 2] = (color[2] * 256.0) as u8;
     }
 
     pub fn resize(&mut self, new_size: (usize, usize)) {
@@ -51,9 +57,196 @@ impl RayTracer {
 
         self.buffer_byte_size = new_byte_size;
         self.buffer_size = new_size;
+    }
+
+    pub fn get_buffer(&self) -> &Vec<u8> {
+        &self.buffer
+    }
+
+    pub fn get_buffer_size(&self) -> (usize, usize) {
+        self.buffer_size
+    }
+
+    pub fn get_byte_size(&self) -> usize {
+        self.buffer_byte_size
+    }
+}
+
+
+pub struct RayTracer {
+    // systems
+    event_sender: UserEventSender<UserEvent>,
+    ray_worker_manager: RayWorkerManager,
+    buffer_sender: Sender<RayResult>,
+    buffer_receiver: Receiver<RayResult>,
+    core_thread_nums: usize,
+
+    // raw datas
+    buffer: RayTracerBuffer,
+
+    // scene
+    world: World,
+    camera: Camera,
+    settings: RayTracerSettings,
+
+    // state
+    state: RayTracerState,
+    received_packet: usize,
+    buffer_updated: bool
+}
+
+impl RayTracer {
+    pub fn new(init_size: (usize, usize), core_thread_nums: usize, event_sender: UserEventSender<UserEvent>) -> RayTracer {
+        let mut new_buffer: Vec<u8> = Vec::new();
+        let new_byte_size = init_size.0 * init_size.1 * 3;
+        new_buffer.resize(new_byte_size, 0);
+        
+        let raytracer_buffer = RayTracerBuffer {
+            buffer: new_buffer,
+            buffer_size: init_size,
+            buffer_byte_size: new_byte_size
+        };
+
+        let ray_tracer_settings = RayTracerSettings {
+            sample_count: 1000,
+            bound_limit: 100,
+            receive_limit: 100
+        };
+
+        let (sender, receiver): (Sender<RayResult>, Receiver<RayResult>) = channel();
+
+        RayTracer {
+            event_sender,
+            ray_worker_manager: RayWorkerManager::new(),
+            buffer_sender: sender,
+            buffer_receiver: receiver,
+            core_thread_nums,
+            buffer: raytracer_buffer,
+            world: World::new_default(),
+            camera: Camera::new_default(),
+            settings: ray_tracer_settings,
+            state: RayTracerState::Idle,
+            received_packet: 0,
+            buffer_updated: false
+        }
+    }
+
+    pub fn resize(&mut self, new_size: (usize, usize)) {
+        self.buffer.resize(new_size);
     } 
 
     pub fn run(&mut self) {
+        if let RayTracerState::Idle = self.state {} else {
+            return;
+        }
+
+        self.state = RayTracerState::Working;
+
+        self.build_world();
+
+        let mut ray_worker_settings = RayWorkerSettings {
+            screen_size: self.get_buffer_size(),
+            bound_y: (0, 0),
+            sample_count: self.settings.sample_count,
+            bound_limit: self.settings.bound_limit,
+        };
+
+        let cpu_nums = num_cpus::get();
+        let worker_nums = if cpu_nums > self.core_thread_nums { cpu_nums - self.core_thread_nums } else { 1 };
+        let per_worker_y = self.get_buffer_size().1 / worker_nums;
+        let mut prev_max_bound: usize = 0;
+        for i in 0 .. worker_nums {
+            ray_worker_settings.bound_y.0 = prev_max_bound;
+            ray_worker_settings.bound_y.1 += per_worker_y;
+            prev_max_bound = ray_worker_settings.bound_y.1;
+            if i == (worker_nums - 1) {
+                ray_worker_settings.bound_y.1 = self.get_buffer_size().1;
+            }
+
+            let copied_world = self.world.clone();
+            let copied_camera = self.camera.clone();
+            let copied_sender = self.buffer_sender.clone();
+            self.ray_worker_manager.start_worker(copied_world, copied_camera, copied_sender, ray_worker_settings);
+        }
+    }
+
+    pub fn tick(&mut self) {
+        if let RayTracerState::Working = self.state {} else {
+            return;
+        }
+
+        let worker_nums = self.ray_worker_manager.get_worker_nums();
+        let expected_packet = worker_nums * self.settings.sample_count as usize;
+        if self.received_packet >= expected_packet {
+            self.print_message("finished raytracing!", false);
+            self.ray_worker_manager.join_workers();
+            self.state = RayTracerState::Idle;
+            self.received_packet = 0;
+            return;
+        }
+
+        let mut receive_count = 0;
+        while receive_count < self.settings.receive_limit {
+            match self.buffer_receiver.recv() {
+                Ok(ray_result) => {
+                    self.received_packet += 1;
+                    self.buffer_updated = true;
+                    self.apply_worker_buffer(ray_result);
+                }
+                Err(_) => { 
+                    break;
+                }
+            }
+
+            receive_count += 1;
+        }
+
+        let progress_percentage = (self.received_packet as f64 / expected_packet as f64) * 100.0;
+        let message = format!("progress: {percentage:.2}%", percentage = progress_percentage);
+        self.print_message(&message, true);
+    }
+
+    pub fn get_raytracer_state(&self) -> RayTracerState {
+        self.state
+    }
+
+    pub fn is_buffer_updated(&self) -> bool {
+        self.buffer_updated
+    }
+
+    pub fn consume_buffer(&mut self) -> &RayTracerBuffer {
+        self.buffer_updated = false;
+        &self.buffer
+    }
+
+    pub fn get_buffer_size(&self) -> (usize, usize) {
+        self.buffer.get_buffer_size()
+    }
+
+    pub fn print_message(&self, message: &str, ignore_print: bool) {
+        if !ignore_print {
+            println!("{msg}", msg = message);
+        }
+
+        let event = UserEvent::SetHeader(message.to_string());
+        let result = self.event_sender.send_event(event);
+        match result {
+            _ => {}
+        }
+    }
+
+    fn apply_worker_buffer(&mut self, ray_result: RayResult) {
+        for x in 0 .. self.get_buffer_size().0 {
+            for y in ray_result.bound_y.0 .. ray_result.bound_y.1 {
+                let offseted_y = y - ray_result.bound_y.0;
+                let target_index = self.get_buffer_size().0 * offseted_y + x;
+                let target_color = ray_result.srgb_buffer[target_index];
+                self.buffer.set_buffer((x, y), &target_color, true);
+            }
+        }
+    }
+
+    fn build_world(&mut self) {
         // Material
         let material_ground = Lambertian::new(Color::new(0.2, 0.2, 0.2));
         let material_center = Lambertian::new(Color::new(0.9, 0.6, 0.6));
@@ -85,112 +278,13 @@ impl RayTracer {
                 0.5,
                 Box::new(material_right))
             );
+
+        self.world.clear_all_objects();
         self.world.add_object(main_sphere);
         self.world.add_object(floor_sphere);
         self.world.add_object(left_sphere);
         self.world.add_object(right_sphere);
-
-        // Camera
-        let aspect_ratio = self.buffer_size.0 as f64 / self.buffer_size.1 as f64;
-        self.camera.update(aspect_ratio);
-    
-        let total_count = self.buffer_size.0 * self.buffer_size.1;
-        for y in 0 .. self.buffer_size.1 {
-            for x in 0 .. self.buffer_size.0 {
-                let final_color = self.multisample_ray((x, y), self.sample_count);
-                self.set_buffer((x, y), &final_color, true);
-            }
-
-            let percentage = ((self.buffer_size.0) * (y + 1) * 100) / total_count;
-            self.print_message(&format!("Progress... {}%", percentage));
-        }
-
-        self.print_message("Finish Raytrace!")
     }
 
-    pub fn set_buffer(&mut self, pos: (usize, usize), color: &Color, flip_y: bool) {
-        let cur_y = match flip_y {
-            true => { self.buffer_size.1 - pos.1 - 1 }
-            false => { pos.1 }
-        };
-
-        let index: usize = (self.buffer_size.0 * cur_y * 3 + pos.0 * 3) as usize;
-        self.buffer[index + 0] = (color[0] * 256.0) as u8;
-        self.buffer[index + 1] = (color[1] * 256.0) as u8;
-        self.buffer[index + 2] = (color[2] * 256.0) as u8;
-    }
-
-    pub fn get_buffer(&self) -> &Vec<u8> {
-        &self.buffer
-    }
-
-    pub fn get_size(&self) -> &(usize, usize) {
-        &self.buffer_size
-    }
-
-    fn print_message(&self, message: &str) {
-        let event = UserEvent::SetHeader(message.to_string());
-        let result = self.event_sender.send_event(event);
-
-        match result {
-            _ => {}
-        }
-    }
-
-    fn ray_color(&self, ray: &Ray) -> Color {
-        self.reflect_ray_recursive(ray, self.bound_limit)
-    }
-
-    fn reflect_ray_recursive(&self, ray: &Ray, bound_count: u32) -> Color {
-        if bound_count == 0 {
-            return self.world.get_sky_color();
-        }
-
-        let hit_record = self.world.world_hit(ray, 0.0001, f64::MAX);
-
-        let out_color: Color;
-        match hit_record {
-            Ok(record) => {
-                let materal_result = record.material.scatter(ray, &record);
-                match materal_result {
-                    Some(result) => {
-                        out_color = result.attenuation * self.reflect_ray_recursive(&result.scattered_ray, bound_count - 1);
-                    }
-                    _ => { 
-                        out_color = self.world.get_sky_color();
-                    }
-                }
-            }
-            Err(()) => {
-                out_color = self.world.get_sky_color();
-            }
-        }
-
-        out_color
-    }
-
-    fn multisample_ray(&self, screen_pos: (usize, usize), sample_count: u32) -> Color {
-        let mut accmulated_color = Color::new_default();
-        for _ in 0 .. sample_count {
-            let u_rand = rand::thread_rng().gen_range(0.0 .. 1.0);
-            let u = (screen_pos.0 as f64 + u_rand) / (self.buffer_size.0 - 1) as f64;
-            let v_rand = rand::thread_rng().gen_range(0.0 .. 1.0);
-            let v = (screen_pos.1 as f64 + v_rand) / (self.buffer_size.1 - 1) as f64;
-
-            let ray = self.camera.get_ray(u, v);
-            accmulated_color += self.ray_color(&ray);
-        }
-
-        let scale = 1.0 / sample_count as f64;
-        for i in 0 .. 3 {
-            let mut channel = accmulated_color[i];
-            channel *= scale;
-            channel = channel.sqrt();
-            channel = channel.clamp(0.0, 1.0);
-            accmulated_color.set_from_index(i, channel);
-        }
-
-        accmulated_color
-    }
 }
 

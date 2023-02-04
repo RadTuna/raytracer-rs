@@ -8,16 +8,20 @@ mod object;
 mod world;
 mod camera;
 mod material;
+mod threading;
+
+
+use std::sync::mpsc::channel;
+use std::sync::mpsc::{Receiver, Sender};
+use std::thread;
 
 use speedy2d::dimen::Vector2;
 use speedy2d::image::{ImageSmoothingMode, ImageDataType};
 use speedy2d::{Graphics2D, Window};
 use speedy2d::window::{WindowHandler, WindowHelper, VirtualKeyCode, WindowCreationOptions, WindowSize, WindowPosition};
 
-use raytracer::RayTracer;
-
-use std::thread;
-use std::sync::mpsc;
+use raytracer::{RayTracer, RayTracerBuffer};
+use raytracer::RayTracerState;
 
 
 fn main() {
@@ -33,64 +37,74 @@ fn main() {
 
     let window = Window::<UserEvent>::new_with_user_events(title, creation_options).unwrap();
     let event_sender = window.create_user_event_sender();
-    let raytracer = RayTracer::new((width, height), event_sender);
 
-    window.run_loop(RTWindowHandler::new(raytracer, title));
+    let (command_sender, command_receiver): (Sender<RayTracerCommand>, Receiver<RayTracerCommand>) = channel();
+    let (buffer_sender, buffer_receiver): (Sender<RayTracerBuffer>, Receiver<RayTracerBuffer>) = channel();
+
+    let thread_handle = thread::spawn(move || {
+        let raytracer = RayTracer::new((width, height), 2, event_sender);
+        raytracer_main(raytracer, command_receiver, buffer_sender);
+    });
+
+
+    window.run_loop(RTWindowHandler::new(title, command_sender, buffer_receiver));
 }
+
+
+enum RayTracerCommand {
+    Run,
+    Exit
+}
+
+fn raytracer_main(mut raytracer: RayTracer, command_receiver: Receiver<RayTracerCommand>, buffer_sender: Sender<RayTracerBuffer>) {
+    loop {
+        match command_receiver.try_recv() {
+            Ok(command) => {
+                match command {
+                    RayTracerCommand::Run => {
+                        if let RayTracerState::Idle = raytracer.get_raytracer_state() {
+                            raytracer.run();
+                        }
+                    }
+                    RayTracerCommand::Exit => {
+                        break;
+                    }
+                }
+            }
+            _ => { }
+        }
+
+        if let RayTracerState::Working = raytracer.get_raytracer_state() {
+            raytracer.tick();
+            let copied_buffer = raytracer.consume_buffer().clone();
+            buffer_sender.send(copied_buffer).unwrap();
+        }
+    }
+}
+
 
 pub enum UserEvent {
     SetHeader(String)
 }
 
-struct RTReturn {
-    raytracer: RayTracer,
-    buffer: Vec<u8>,
-    size: (usize, usize)
-}
-
 struct RTWindowHandler {
-    raytracer: Option<RayTracer>,
     title: String,
-    need_raytrace: bool,
-    receiver: Option<mpsc::Receiver<RTReturn>>
+    command_sender: Sender<RayTracerCommand>,
+    buffer_receiver: Receiver<RayTracerBuffer>
 }
 
 impl RTWindowHandler {
-    fn new(raytracer: RayTracer, title: &str) -> RTWindowHandler {
+    fn new(title: &str, command_sender: Sender<RayTracerCommand>, buffer_receiver: Receiver<RayTracerBuffer>) -> RTWindowHandler {
         RTWindowHandler { 
-            raytracer: Option::Some(raytracer),
             title: title.to_string(),
-            need_raytrace: false,
-            receiver: Option::None
+            command_sender,
+            buffer_receiver
          }
     }
 
     fn redraw_for_rt(&mut self, helper: &mut WindowHelper<UserEvent>) {
-        self.need_raytrace = true;
+        self.command_sender.send(RayTracerCommand::Run).unwrap();
         helper.request_redraw();
-    }
-
-    fn run_async_raytrace(&mut self) {
-        let (tx, rx) = mpsc::channel();
-        self.receiver = Option::Some(rx);
-
-        let local_raytracer = self.raytracer.take();
-        thread::spawn(move || {
-            if let Some(mut real_raytracer) = local_raytracer
-            {
-                real_raytracer.run();
-                let buffer = real_raytracer.get_buffer().clone();
-                let size = real_raytracer.get_size().clone();
-                let result = RTReturn { 
-                    raytracer: real_raytracer, 
-                    buffer, 
-                    size 
-                };
-
-                tx.send(result).unwrap();
-            }
-        });
-        self.need_raytrace = false;
     }
 }
 
@@ -99,47 +113,26 @@ impl WindowHandler<UserEvent> for RTWindowHandler {
         self.redraw_for_rt(helper);
     }
 
-    fn on_resize(&mut self, helper: &mut WindowHelper<UserEvent>, size_pixels: speedy2d::dimen::Vector2<u32>) {
-        match &mut self.raytracer {
-            Some(local_raytracer) => {
-                local_raytracer.resize((size_pixels.x as usize, size_pixels.y as usize));
+    fn on_draw(&mut self, helper: &mut WindowHelper<UserEvent>, graphics: &mut Graphics2D) {
+        match self.buffer_receiver.try_recv() {
+            Ok(buffer) => {
+                let buffer_size = buffer.get_buffer_size();
+                let image_result = graphics.create_image_from_raw_pixels(
+                    ImageDataType::RGB, 
+                    ImageSmoothingMode::Linear,
+                    Vector2::new(buffer_size.0 as u32, buffer_size.1 as u32),
+                    &buffer.get_buffer());
+
+                match image_result {
+                    Ok(image) => {
+                        graphics.draw_image(Vector2::new(0.0, 0.0), &image);
+                    }
+                    Err(error) => {
+                        print!("{}", error.error().to_string());
+                    }
+                }
             }
             _ => { }
-        }
-        self.redraw_for_rt(helper);
-    }
-
-    fn on_draw(&mut self, helper: &mut WindowHelper<UserEvent>, graphics: &mut Graphics2D)
-    {
-        if self.need_raytrace == true {
-            self.run_async_raytrace();
-        }
-
-        if let Some(local_receiver) = &self.receiver
-        {
-            let result = local_receiver.try_recv();
-            match result
-            {
-                Ok(real_result) => {
-                    let image_result = graphics.create_image_from_raw_pixels(
-                        ImageDataType::RGB, 
-                        ImageSmoothingMode::Linear,
-                        Vector2::new(real_result.size.0 as u32, real_result.size.1 as u32),
-                        &real_result.buffer);
-            
-                    match image_result {
-                        Ok(image) => {
-                            graphics.draw_image(Vector2::new(0.0, 0.0), &image);
-                        }
-                        Err(error) => {
-                            print!("{}", error.error().to_string());
-                        }
-                    }
-
-                    self.raytracer = Some(real_result.raytracer);
-                }
-                Err(_) => { }
-            }
         }
 
         helper.request_redraw();
@@ -149,7 +142,7 @@ impl WindowHandler<UserEvent> for RTWindowHandler {
         if let Some(virtual_code) = virtual_key_code {
             match virtual_code {
                 VirtualKeyCode::R => {
-                    helper.request_redraw();
+                    self.redraw_for_rt(helper);
                 }
                 _ => {}
             }

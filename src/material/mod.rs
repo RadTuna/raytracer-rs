@@ -1,9 +1,9 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
 
 pub mod errormat;
 pub mod lambertian;
 pub mod metal;
+
+use dyn_clone::DynClone;
 
 use crate::math::vec3::Color;
 use crate::object::HitRecord;
@@ -15,6 +15,8 @@ pub struct ScatteredResult {
     pub scattered_ray : Ray
 }
 
-pub trait Material: Send {
+pub trait Material: Send + DynClone {
     fn scatter(&self, ray: &Ray, hit_record : &HitRecord) -> Option<ScatteredResult>;
 }
+
+dyn_clone::clone_trait_object!(Material);

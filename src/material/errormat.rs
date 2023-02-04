@@ -3,6 +3,8 @@ use crate::material::{Material, ScatteredResult};
 use crate::object::HitRecord;
 use crate::ray::Ray;
 
+
+#[derive(Clone)]
 pub struct ErrorMat {
 
 }

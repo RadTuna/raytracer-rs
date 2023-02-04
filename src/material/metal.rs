@@ -5,6 +5,7 @@ use crate::object::HitRecord;
 use crate::ray::Ray;
 
 
+#[derive(Clone)]
 pub struct Metal {
     albedo: Color
 }

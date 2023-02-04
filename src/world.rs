@@ -3,6 +3,8 @@ use crate::object::{Hittable, HitRecord};
 use crate::ray::Ray;
 use crate::math::vec3::Color;
 
+
+#[derive(Clone)]
 pub struct World {
     objects: Vec<Box<dyn Hittable>>
 }
@@ -54,5 +56,6 @@ impl World {
     pub fn get_sky_color(&self) -> Color {
         Color::new(1.0, 1.0, 1.0)
     }
+    
 }
 

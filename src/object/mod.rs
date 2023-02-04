@@ -1,7 +1,7 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
 
 pub mod sphere;
+
+use dyn_clone::DynClone;
 
 use crate::math::vec3::{Vec3, Point3};
 use crate::ray::Ray;
@@ -24,6 +24,8 @@ impl<'a> HitRecord<'a> {
     }
 }
 
-pub trait Hittable: Send {
+pub trait Hittable: Send + DynClone {
     fn hit(&self, ray: &Ray, weight_min: f64, weight_max: f64) -> Result<HitRecord, ()>;
 }
+
+dyn_clone::clone_trait_object!(Hittable);
